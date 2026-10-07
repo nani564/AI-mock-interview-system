@@ -6,9 +6,9 @@ An interview-training platform focused on adaptive questions and actionable feed
 
 - `interview_engine.py` maintains skill-specific scores and difficulty, selects bounded contextual follow-ups from validated assessment dimensions, and varies interviewer guidance by personality.
 - `ai_evaluator.py` calls a configured OpenAI-compatible chat API and validates structured answer assessments before they reach the decision engine.
-- `app.py` exposes a FastAPI health endpoint at `GET /health`.
-- `frontend/` contains a responsive dashboard with practice configuration controls, honest empty states, and a live health check of the Python API.
-- The evaluator and adaptive engine are not yet wired to an authenticated interview endpoint. The frontend session-start action is deliberately disabled until that workflow exists.
+- `app.py` exposes `GET /health` and `POST /answers/evaluate`; the latter combines a provider assessment with the adaptive decision engine.
+- `frontend/` contains a responsive dashboard, a live API health check, and an answer-evaluation form that calls the Python API.
+- Answer evaluation is stateless: callers supply one question/answer and receive one assessment/decision. It does not create or persist interview sessions.
 
 ## Run locally
 
@@ -21,7 +21,7 @@ python -m pip install -r requirements.txt
 python -m uvicorn app:app --reload --env-file .env
 ```
 
-Copy `.env.example` to `.env` and set `AI_API_KEY` and `AI_MODEL` to enable the evaluator when it is wired into an API workflow. `.env` is ignored by Git.
+Copy `.env.example` to `.env` and set `AI_API_KEY` and `AI_MODEL` to enable answer evaluation. `AI_BASE_URL` defaults to NVIDIA's OpenAI-compatible endpoint. `.env` is ignored by Git and the provider key is read only by the Python server.
 
 Check `http://127.0.0.1:8000/health` or open `http://127.0.0.1:8000/docs` for the generated API documentation.
 
@@ -34,6 +34,8 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:3000`. Set `NEXT_PUBLIC_API_URL` when the backend runs at a different origin. The dashboard's session-start action remains disabled until interview APIs and persistence are implemented.
+
+The evaluation endpoint currently has no authentication or rate limiting and is intended for local development only. Add user authorization, usage controls, and persistent session state before exposing it publicly.
 
 Run the tests with:
 

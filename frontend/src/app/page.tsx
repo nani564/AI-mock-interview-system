@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -22,6 +22,25 @@ import {
 } from "lucide-react";
 
 type ApiHealth = "checking" | "online" | "offline";
+type EvaluationResult = {
+  assessment: {
+    relevance: number;
+    completeness: number;
+    specificity: number;
+    evidence: number;
+    correctness: number | null;
+    contradiction_detected: boolean;
+    unsupported_claim_detected: boolean;
+    quality: number;
+  };
+  decision: {
+    action: string;
+    difficulty: string;
+    focus: string | null;
+    reason: string;
+    interviewer_guidance: string;
+  };
+};
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
@@ -41,6 +60,42 @@ const skillRows = [
 export default function Home() {
   const [apiHealth, setApiHealth] = useState<ApiHealth>("checking");
   const [activeNavigation, setActiveNavigation] = useState("Overview");
+  const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
+  const [evaluationError, setEvaluationError] = useState("");
+  const [isEvaluating, setIsEvaluating] = useState(false);
+
+  async function handleEvaluation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsEvaluating(true);
+    setEvaluationError("");
+    setEvaluation(null);
+
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch(`${apiUrl}/answers/evaluate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: String(form.get("question") ?? ""),
+          answer: String(form.get("answer") ?? ""),
+          skill: String(form.get("skill") ?? ""),
+          resume_evidence: String(form.get("resume_evidence") ?? ""),
+          personality: String(form.get("personality") ?? "friendly"),
+          difficulty: String(form.get("difficulty") ?? "medium"),
+          current_question_id: "manual-evaluation",
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(typeof result.detail === "string" ? result.detail : "Answer evaluation failed.");
+      }
+      setEvaluation(result as EvaluationResult);
+    } catch (error) {
+      setEvaluationError(error instanceof Error ? error.message : "Answer evaluation failed.");
+    } finally {
+      setIsEvaluating(false);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -67,7 +122,6 @@ export default function Home() {
           <span className="brand-mark" aria-hidden="true">R</span>
           <span className="brand-name">round one<span>INTERVIEW STUDIO</span></span>
         </a>
-
         <div className="sidebar-label">WORKSPACE</div>
         <nav className="main-nav">
           {navigation.map(({ label, href, icon: Icon }) => (
@@ -84,7 +138,6 @@ export default function Home() {
             </a>
           ))}
         </nav>
-
         <div className="sidebar-bottom">
           <div className="sidebar-label">YOUR PROFILE</div>
           <div className="profile-row">
@@ -228,6 +281,87 @@ export default function Home() {
               <a className="text-link" href="#practice">Choose a starting focus <ArrowUpRight aria-hidden="true" size={15} /></a>
             </section>
           </div>
+
+          <section className="evaluation-panel" aria-labelledby="evaluation-title">
+            <div className="section-heading section-heading-tight">
+              <div><p className="eyebrow">LIVE API CHECK</p><h2 id="evaluation-title">Evaluate an answer</h2></div>
+              <span className="muted-caption">Uses your server-side NVIDIA configuration</span>
+            </div>
+            <p className="panel-description">Submit a real answer for model assessment and an adaptive next-step recommendation. This is a practice check, not a full interview session.</p>
+            <form className="evaluation-form" onSubmit={handleEvaluation}>
+              <label className="setup-field evaluation-wide">
+                <span>Interview question</span>
+                <textarea name="question" required maxLength={4000} placeholder="What was the most challenging part of your project?" />
+              </label>
+              <label className="setup-field evaluation-wide">
+                <span>Your answer</span>
+                <textarea name="answer" required maxLength={12000} placeholder="Describe what you did, why, and what changed as a result." />
+              </label>
+              <label className="setup-field">
+                <span>Skill being assessed</span>
+                <input name="skill" required maxLength={80} defaultValue="Project explanation" />
+              </label>
+              <label className="setup-field">
+                <span>Interviewer style</span>
+                <select name="personality" defaultValue="friendly">
+                  <option value="friendly">Friendly</option>
+                  <option value="hr">HR</option>
+                  <option value="strict">Strict</option>
+                  <option value="technical">Technical</option>
+                </select>
+              </label>
+              <label className="setup-field">
+                <span>Current difficulty</span>
+                <select name="difficulty" defaultValue="medium">
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+              <label className="setup-field evaluation-wide">
+                <span>Resume evidence <span className="optional-label">OPTIONAL</span></span>
+                <textarea name="resume_evidence" maxLength={12000} placeholder="Relevant resume detail to use as context" />
+              </label>
+              <div className="evaluation-submit-row evaluation-wide">
+                <span className="muted-caption">Your API key is used only by the Python server.</span>
+                <button className="evaluate-button" type="submit" disabled={isEvaluating || apiHealth !== "online"}>
+                  <Sparkles aria-hidden="true" size={15} /> {isEvaluating ? "Evaluating…" : "Evaluate answer"}
+                </button>
+              </div>
+            </form>
+            {evaluationError && <p className="evaluation-error" role="alert">{evaluationError}</p>}
+            {evaluation && (
+              <div className="evaluation-result" role="status" aria-live="polite">
+                <div className="result-heading">
+                  <div><p className="eyebrow">MODEL ASSESSMENT</p><h3>Next step: {evaluation.decision.action.replaceAll("_", " ")}</h3></div>
+                  <span className="result-difficulty">Next difficulty · {evaluation.decision.difficulty}</span>
+                </div>
+                <p className="result-reason">{evaluation.decision.reason.replaceAll("_", " ")}{evaluation.decision.focus ? ` · Focus: ${evaluation.decision.focus.replaceAll("_", " ")}` : ""}</p>
+                <div className="assessment-grid">
+                  {([
+                    ["Relevance", evaluation.assessment.relevance],
+                    ["Completeness", evaluation.assessment.completeness],
+                    ["Specificity", evaluation.assessment.specificity],
+                    ["Evidence", evaluation.assessment.evidence],
+                    ["Correctness", evaluation.assessment.correctness],
+                    ["Answer quality", evaluation.assessment.quality],
+                    ["Contradiction", evaluation.assessment.contradiction_detected],
+                    ["Unsupported claim", evaluation.assessment.unsupported_claim_detected],
+                  ] as const).map(([label, value]) => (
+                    <div className="assessment-metric" key={label}>
+                      <span>{label}</span>
+                      <strong>
+                        {typeof value === "boolean"
+                          ? value ? "Detected" : "Not detected"
+                          : value === null ? "Not assessed" : `${Math.round(value * 100)}%`}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+                <p className="guidance-note">{evaluation.decision.interviewer_guidance} Training feedback only; not a hiring prediction.</p>
+              </div>
+            )}
+          </section>
 
           <section className="history-section" aria-labelledby="history-title">
             <div className="section-heading">
